@@ -38,11 +38,11 @@ log() { printf '[%s] %s\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*"; }
 # If running on a PaaS that expects a listening PORT (e.g., Railway Web service),
 # expose a tiny static HTTP server so the platform does not terminate the container.
 # This also lets you fetch outputs from the mounted output directory while the job runs.
+HTTP_PID=""
 if [[ -n "${PORT:-}" ]]; then
-  # Defer until after OUT_BASE is ready; it is set from env earlier
   log "Starting lightweight HTTP server on PORT=$PORT (serving ${OUT_BASE})"
-  # Serve in background; avoid failing the main job if this server cannot start
-  python3 -m http.server "$PORT" --directory "$OUT_BASE" >/dev/null 2>&1 &
+  python3 -m http.server "$PORT" --directory "$OUT_BASE" &
+  HTTP_PID=$!
 fi
 
 # Prepare timeout wrapper if requested
@@ -176,6 +176,12 @@ DOMAIN="${1:-${DOMAIN:-}}"
 
 if [[ -n "$DOMAIN" ]]; then
   run_for_domain "$DOMAIN" || log "Domain failed: $DOMAIN"
+  # If an HTTP server is running, keep the container alive so files remain accessible
+  if [[ -n "$HTTP_PID" ]]; then
+    log "Scan(s) complete. HTTP server is running. Waiting indefinitely (press Ctrl+C or send SIGTERM to stop)."
+    # Wait on the HTTP server process; trap handles SIGTERM
+    wait "$HTTP_PID"
+  fi
   exit 0
 fi
 
@@ -189,6 +195,12 @@ if [[ -f "$TARGETS_FILE" ]]; then
   for d in "${DOMAINS[@]}"; do
     run_for_domain "$d" || log "Domain failed: $d"
   done
+  # If an HTTP server is running, keep the container alive so files remain accessible
+  if [[ -n "$HTTP_PID" ]]; then
+    log "Scan(s) complete. HTTP server is running. Waiting indefinitely (press Ctrl+C or send SIGTERM to stop)."
+    # Wait on the HTTP server process; trap handles SIGTERM
+    wait "$HTTP_PID"
+  fi
   exit 0
 fi
 
