@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-set -x
 
 trap 'echo "SIGTERM received, exiting..."; pkill -P $$ >/dev/null 2>&1 || true; exit 143' TERM INT
 
@@ -85,10 +84,10 @@ run_for_domain() {
     [[ -e "$part" ]] || break
     static_batches=$((static_batches+1))
     log ">> Static batch: $(basename "$part")"
-    maybe_timeout nice -n 10 ionice -c3 \
+    maybe_timeout \
       shuffledns -list "$part" -d "$domain" \
         -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
-      2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
+      2>&1 | tee -a "$outdir/$domain.dns_brute" || true
     sleep "$SLEEP_SEC"
   done
 
@@ -110,10 +109,10 @@ run_for_domain() {
       [[ -e "$part" ]] || break
       dyn_batches=$((dyn_batches+1))
       log ">> Dynamic batch: $(basename "$part")"
-      maybe_timeout nice -n 10 ionice -c3 \
+      maybe_timeout \
         shuffledns -list "$part" -d "$domain" \
           -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
-        2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
+        2>&1 | tee -a "$outdir/$domain.dns_brute" || true
       sleep "$SLEEP_SEC"
     done
   fi
