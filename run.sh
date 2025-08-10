@@ -51,6 +51,7 @@ run_for_domain() {
 
   log "Starting scan for $domain"
   log "THREADS=$THREADS BATCH_LINES=$BATCH_LINES SLEEP_SEC=$SLEEP_SEC ENABLE_DYNAMIC=$ENABLE_DYNAMIC"
+  log "Using massdns at: $MASSDNS_BIN"
 
   # Clean old files
   rm -f "$outdir/$domain.wordlist" "$outdir/$domain.dns_brute" "$outdir/$domain.dns_gen" "$outdir/summary.txt"
@@ -76,7 +77,7 @@ run_for_domain() {
     maybe_timeout nice -n 10 ionice -c3 \
       shuffledns -list "$part" -d "$domain" \
         -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
-      | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
+      2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
     sleep "$SLEEP_SEC"
   done
 
@@ -101,7 +102,7 @@ run_for_domain() {
       maybe_timeout nice -n 10 ionice -c3 \
         shuffledns -list "$part" -d "$domain" \
           -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
-        | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
+        2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
       sleep "$SLEEP_SEC"
     done
   fi
