@@ -1,0 +1,15 @@
+# Outputs
+/out/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor/OS
+.DS_Store
+.vscode/
+.idea/
+
+# GitHub Actions artifacts
+/dist/
+
