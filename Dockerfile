@@ -41,6 +41,4 @@ WORKDIR /app
 COPY run.sh /app/run.sh
 RUN chmod +x /app/run.sh
 
-VOLUME ["/app/out"]
-
 ENTRYPOINT ["/app/run.sh"]
