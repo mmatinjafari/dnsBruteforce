@@ -15,6 +15,24 @@ RUN_TIMEOUT_SEC="${RUN_TIMEOUT_SEC:-0}"
 TARGETS_FILE="${TARGETS_FILE:-/app/targets.txt}"
 OUT_BASE="${OUT_BASE:-${RAILWAY_VOLUME_MOUNT_PATH:-/app/out}}"
 
+# Resolve massdns binary path early and fail fast if missing
+MASSDNS_BIN="${MASSDNS_BIN:-}"
+if [[ -z "$MASSDNS_BIN" ]]; then
+  if command -v massdns >/dev/null 2>&1; then
+    MASSDNS_BIN="$(command -v massdns)"
+  elif [[ -x "/usr/local/bin/massdns" ]]; then
+    MASSDNS_BIN="/usr/local/bin/massdns"
+  elif [[ -x "/usr/bin/massdns" ]]; then
+    MASSDNS_BIN="/usr/bin/massdns"
+  fi
+fi
+if [[ -z "$MASSDNS_BIN" || ! -x "$MASSDNS_BIN" ]]; then
+  echo "[ERR] massdns binary not found. Expected at /usr/local/bin/massdns or in PATH." >&2
+  echo "PATH=$PATH" >&2
+  ls -l /usr/local/bin 2>/dev/null || true
+  exit 1
+fi
+
 log() { printf '[%s] %s\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*"; }
 
 # Prepare timeout wrapper if requested
@@ -57,7 +75,7 @@ run_for_domain() {
     log ">> Static batch: $(basename "$part")"
     maybe_timeout nice -n 10 ionice -c3 \
       shuffledns -list "$part" -d "$domain" \
-        -r "$RESOLVERS" -massdns "$(command -v massdns)" -mode resolve -t "$THREADS" -silent \
+        -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
       | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
     sleep "$SLEEP_SEC"
   done
@@ -82,7 +100,7 @@ run_for_domain() {
       log ">> Dynamic batch: $(basename "$part")"
       maybe_timeout nice -n 10 ionice -c3 \
         shuffledns -list "$part" -d "$domain" \
-          -r "$RESOLVERS" -massdns "$(command -v massdns)" -mode resolve -t "$THREADS" -silent \
+          -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
         | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
       sleep "$SLEEP_SEC"
     done

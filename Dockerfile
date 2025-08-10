@@ -18,6 +18,7 @@ RUN curl --retry 3 -fsSL https://go.dev/dl/go1.22.5.linux-amd64.tar.gz | tar -C 
 RUN git clone --depth=1 https://github.com/blechschmidt/massdns /opt/massdns \
     && make -C /opt/massdns \
     && install -m 0755 /opt/massdns/bin/massdns /usr/local/bin/massdns \
+    && ln -sf /usr/local/bin/massdns /usr/bin/massdns \
     && rm -rf /opt/massdns
 
 # Install shuffledns
