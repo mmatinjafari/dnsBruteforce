@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-trap 'echo "SIGTERM received, exiting..."; exit 143' TERM
+trap 'echo "SIGTERM received, exiting..."; pkill -P $$ >/dev/null 2>&1 || true; exit 143' TERM INT
 
 # Defaults (low resource friendly)
 THREADS="${THREADS:-3}"
@@ -34,6 +34,16 @@ if [[ -z "$MASSDNS_BIN" || ! -x "$MASSDNS_BIN" ]]; then
 fi
 
 log() { printf '[%s] %s\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*"; }
+
+# If running on a PaaS that expects a listening PORT (e.g., Railway Web service),
+# expose a tiny static HTTP server so the platform does not terminate the container.
+# This also lets you fetch outputs from the mounted output directory while the job runs.
+if [[ -n "${PORT:-}" ]]; then
+  # Defer until after OUT_BASE is ready; it is set from env earlier
+  log "Starting lightweight HTTP server on PORT=$PORT (serving ${OUT_BASE})"
+  # Serve in background; avoid failing the main job if this server cannot start
+  python3 -m http.server "$PORT" --directory "$OUT_BASE" >/dev/null 2>&1 &
+fi
 
 # Prepare timeout wrapper if requested
 maybe_timeout() {
