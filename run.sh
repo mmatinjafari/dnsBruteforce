@@ -4,8 +4,8 @@ set -euo pipefail
 trap 'echo "SIGTERM received, exiting..."; pkill -P $$ >/dev/null 2>&1 || true; exit 143' TERM INT
 
 # Defaults (low resource friendly)
-THREADS="${THREADS:-3}"
-BATCH_LINES="${BATCH_LINES:-20000}"
+THREADS="${THREADS:-2}"
+BATCH_LINES="${BATCH_LINES:-5000}"
 SLEEP_SEC="${SLEEP_SEC:-5}"
 ENABLE_DYNAMIC="${ENABLE_DYNAMIC:-0}"
 RESOLVERS="${RESOLVERS:-/root/resolvers.txt}"
@@ -87,7 +87,16 @@ run_for_domain() {
     maybe_timeout \
       shuffledns -list "$part" -d "$domain" \
         -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
-      2>&1 | tee -a "$outdir/$domain.dns_brute" || true
+      2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null
+    
+    exit_code=${PIPESTATUS[0]}
+    if [[ $exit_code -eq 137 ]]; then
+        log "[FATAL] Exit code 137 indicates an Out-Of-Memory (OOM) error. The container was killed."
+        log "[FATAL] To fix this, reduce BATCH_LINES or use a machine with more RAM."
+    elif [[ $exit_code -ne 0 ]]; then
+        log "[WARNING] shuffledns exited with code $exit_code for batch $(basename "$part")."
+    fi
+
     sleep "$SLEEP_SEC"
   done
 
@@ -112,7 +121,16 @@ run_for_domain() {
       maybe_timeout \
         shuffledns -list "$part" -d "$domain" \
           -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
-        2>&1 | tee -a "$outdir/$domain.dns_brute" || true
+        2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null
+
+      exit_code=${PIPESTATUS[0]}
+      if [[ $exit_code -eq 137 ]]; then
+          log "[FATAL] Exit code 137 indicates an Out-Of-Memory (OOM) error during dynamic phase."
+          log "[FATAL] To fix this, reduce BATCH_LINES or use a machine with more RAM."
+      elif [[ $exit_code -ne 0 ]]; then
+          log "[WARNING] shuffledns (dynamic) exited with code $exit_code for batch $(basename "$part")."
+      fi
+
       sleep "$SLEEP_SEC"
     done
   fi
