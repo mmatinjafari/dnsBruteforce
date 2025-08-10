@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+set -x
 
 trap 'echo "SIGTERM received, exiting..."; pkill -P $$ >/dev/null 2>&1 || true; exit 143' TERM INT
 
