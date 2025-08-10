@@ -4,8 +4,11 @@ set -euo pipefail
 trap 'echo "SIGTERM received, exiting..."; pkill -P $$ >/dev/null 2>&1 || true; exit 143' TERM INT
 
 # Defaults (low resource friendly)
+# Primary knobs for resources
 THREADS="${THREADS:-2}"
 BATCH_LINES="${BATCH_LINES:-5000}"
+# Limit internal massdns concurrency inside shuffledns (prevents OOM). Smaller is safer.
+CONCURRENCY="${CONCURRENCY:-100}"
 SLEEP_SEC="${SLEEP_SEC:-5}"
 ENABLE_DYNAMIC="${ENABLE_DYNAMIC:-0}"
 RESOLVERS="${RESOLVERS:-/root/resolvers.txt}"
@@ -86,7 +89,7 @@ run_for_domain() {
     log ">> Static batch: $(basename "$part")"
     maybe_timeout \
       shuffledns -list "$part" -d "$domain" \
-        -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
+        -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -c "$CONCURRENCY" -silent \
       2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
     
     exit_code=${PIPESTATUS[0]}
@@ -120,7 +123,7 @@ run_for_domain() {
       log ">> Dynamic batch: $(basename "$part")"
       maybe_timeout \
         shuffledns -list "$part" -d "$domain" \
-          -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
+          -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -c "$CONCURRENCY" -silent \
         2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
 
       exit_code=${PIPESTATUS[0]}
