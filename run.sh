@@ -12,37 +12,9 @@ RESOLVERS="${RESOLVERS:-/root/resolvers.txt}"
 DNSGEN_WORDLIST="${DNSGEN_WORDLIST:-}"
 MAX_RECORDS="${MAX_RECORDS:-0}"
 RUN_TIMEOUT_SEC="${RUN_TIMEOUT_SEC:-0}"
-
-DOMAIN="${1:-${DOMAIN:-}}"
-if [[ -z "$DOMAIN" ]]; then
-  echo "Usage: ./run.sh <domain> or set DOMAIN env"
-  exit 1
-fi
-
-OUTDIR="/app/out/$DOMAIN"
-mkdir -p "$OUTDIR"
+TARGETS_FILE="${TARGETS_FILE:-/app/targets.txt}"
 
 log() { printf '[%s] %s\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*"; }
-
-cleanup_tmp() {
-  rm -f "$OUTDIR"/${DOMAIN}_part_* || true
-  rm -f "$OUTDIR"/${DOMAIN}_gen_part_* || true
-}
-trap cleanup_tmp EXIT
-
-log "Starting scan for $DOMAIN"
-log "THREADS=$THREADS BATCH_LINES=$BATCH_LINES SLEEP_SEC=$SLEEP_SEC ENABLE_DYNAMIC=$ENABLE_DYNAMIC"
-
-# Clean old files
-rm -f "$OUTDIR/$DOMAIN.wordlist" "$OUTDIR/$DOMAIN.dns_brute" "$OUTDIR/$DOMAIN.dns_gen" "$OUTDIR/summary.txt"
-
-start_ts=$(date +%s)
-
-# Build static wordlist (.domain appended)
-awk -v domain="$DOMAIN" '{print $0"."domain}' /app/wordlists/static.txt > "$OUTDIR/$DOMAIN.wordlist"
-if [[ "$MAX_RECORDS" != "0" ]]; then
-  head -n "$MAX_RECORDS" "$OUTDIR/$DOMAIN.wordlist" > "$OUTDIR/tmp" && mv "$OUTDIR/tmp" "$OUTDIR/$DOMAIN.wordlist"
-fi
 
 # Prepare timeout wrapper if requested
 maybe_timeout() {
@@ -53,72 +25,120 @@ maybe_timeout() {
   fi
 }
 
-# Split into batches
-split -l "$BATCH_LINES" "$OUTDIR/$DOMAIN.wordlist" "$OUTDIR/${DOMAIN}_part_" || true
+run_for_domain() {
+  local domain="$1"
+  local outdir="/app/out/$domain"
+  mkdir -p "$outdir"
 
-# Static resolution (shuffledns + massdns)
-static_batches=0
-for part in "$OUTDIR"/${DOMAIN}_part_*; do
-  [[ -e "$part" ]] || break
-  static_batches=$((static_batches+1))
-  log ">> Static batch: $(basename "$part")"
-  maybe_timeout nice -n 10 ionice -c3 \
-    shuffledns -list "$part" -d "$DOMAIN" \
-      -r "$RESOLVERS" -m "$(command -v massdns)" -t "$THREADS" -silent \
-    | tee -a "$OUTDIR/$DOMAIN.dns_brute" >/dev/null || true
-  sleep "$SLEEP_SEC"
-done
+  log "Starting scan for $domain"
+  log "THREADS=$THREADS BATCH_LINES=$BATCH_LINES SLEEP_SEC=$SLEEP_SEC ENABLE_DYNAMIC=$ENABLE_DYNAMIC"
 
-# Dynamic phase (dnsgen) optional
-dyn_batches=0
-if [[ "$ENABLE_DYNAMIC" == "1" ]]; then
-  log "Generating permutations via dnsgen"
-  if [[ -n "$DNSGEN_WORDLIST" && -f "$DNSGEN_WORDLIST" ]]; then
-    maybe_timeout dnsgen -w "$DNSGEN_WORDLIST" "$OUTDIR/$DOMAIN.dns_brute" > "$OUTDIR/$DOMAIN.dns_gen"
-  else
-    maybe_timeout dnsgen "$OUTDIR/$DOMAIN.dns_brute" > "$OUTDIR/$DOMAIN.dns_gen"
-  fi
+  # Clean old files
+  rm -f "$outdir/$domain.wordlist" "$outdir/$domain.dns_brute" "$outdir/$domain.dns_gen" "$outdir/summary.txt"
+
+  local start_ts end_ts elapsed static_batches dyn_batches
+  start_ts=$(date +%s)
+
+  # Build static wordlist (.domain appended)
+  awk -v domain="$domain" '{print $0"."domain}' /app/wordlists/static.txt > "$outdir/$domain.wordlist"
   if [[ "$MAX_RECORDS" != "0" ]]; then
-    head -n "$MAX_RECORDS" "$OUTDIR/$DOMAIN.dns_gen" > "$OUTDIR/tmp" && mv "$OUTDIR/tmp" "$OUTDIR/$DOMAIN.dns_gen"
+    head -n "$MAX_RECORDS" "$outdir/$domain.wordlist" > "$outdir/tmp" && mv "$outdir/tmp" "$outdir/$domain.wordlist"
   fi
 
-  split -l "$BATCH_LINES" "$OUTDIR/$DOMAIN.dns_gen" "$OUTDIR/${DOMAIN}_gen_part_" || true
-  for part in "$OUTDIR"/${DOMAIN}_gen_part_*; do
+  # Split into batches
+  split -l "$BATCH_LINES" "$outdir/$domain.wordlist" "$outdir/${domain}_part_" || true
+
+  # Static resolution
+  static_batches=0
+  for part in "$outdir"/${domain}_part_*; do
     [[ -e "$part" ]] || break
-    dyn_batches=$((dyn_batches+1))
-    log ">> Dynamic batch: $(basename "$part")"
+    static_batches=$((static_batches+1))
+    log ">> Static batch: $(basename "$part")"
     maybe_timeout nice -n 10 ionice -c3 \
-      shuffledns -list "$part" -d "$DOMAIN" \
+      shuffledns -list "$part" -d "$domain" \
         -r "$RESOLVERS" -m "$(command -v massdns)" -t "$THREADS" -silent \
-      | tee -a "$OUTDIR/$DOMAIN.dns_brute" >/dev/null || true
+      | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
     sleep "$SLEEP_SEC"
   done
+
+  # Dynamic phase (optional)
+  dyn_batches=0
+  if [[ "$ENABLE_DYNAMIC" == "1" ]]; then
+    log "Generating permutations via dnsgen"
+    if [[ -n "$DNSGEN_WORDLIST" && -f "$DNSGEN_WORDLIST" ]]; then
+      maybe_timeout dnsgen -w "$DNSGEN_WORDLIST" "$outdir/$domain.dns_brute" > "$outdir/$domain.dns_gen"
+    else
+      maybe_timeout dnsgen "$outdir/$domain.dns_brute" > "$outdir/$domain.dns_gen"
+    fi
+    if [[ "$MAX_RECORDS" != "0" ]]; then
+      head -n "$MAX_RECORDS" "$outdir/$domain.dns_gen" > "$outdir/tmp" && mv "$outdir/tmp" "$outdir/$domain.dns_gen"
+    fi
+
+    split -l "$BATCH_LINES" "$outdir/$domain.dns_gen" "$outdir/${domain}_gen_part_" || true
+    for part in "$outdir"/${domain}_gen_part_*; do
+      [[ -e "$part" ]] || break
+      dyn_batches=$((dyn_batches+1))
+      log ">> Dynamic batch: $(basename "$part")"
+      maybe_timeout nice -n 10 ionice -c3 \
+        shuffledns -list "$part" -d "$domain" \
+          -r "$RESOLVERS" -m "$(command -v massdns)" -t "$THREADS" -silent \
+        | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
+      sleep "$SLEEP_SEC"
+    done
+  fi
+
+  # Deduplicate results
+  if [[ -f "$outdir/$domain.dns_brute" ]]; then
+    sort -u "$outdir/$domain.dns_brute" -o "$outdir/$domain.dns_brute"
+  else
+    touch "$outdir/$domain.dns_brute"
+  fi
+
+  end_ts=$(date +%s)
+  elapsed=$((end_ts - start_ts))
+
+  # Summary
+  {
+    echo "Domain: $domain"
+    echo "Threads: $THREADS"
+    echo "Batch size: $BATCH_LINES"
+    echo "Sleep between batches (sec): $SLEEP_SEC"
+    echo "Dynamic enabled: $ENABLE_DYNAMIC"
+    echo "Static batches: $static_batches"
+    echo "Dynamic batches: $dyn_batches"
+    echo "Resolvers: $RESOLVERS"
+    echo "Records resolved: $(wc -l < "$outdir/$domain.dns_brute" 2>/dev/null || echo 0)"
+    echo "Elapsed seconds: $elapsed"
+  } > "$outdir/summary.txt"
+
+  log "Done. Resolved count: $(wc -l < "$outdir/$domain.dns_brute" 2>/dev/null || echo 0)"
+  log "Output saved to $outdir"
+
+  # Cleanup temporary split files for this domain
+  rm -f "$outdir"/${domain}_part_* "$outdir"/${domain}_gen_part_* || true
+}
+
+# Determine targets: file or single DOMAIN/arg
+DOMAIN="${1:-${DOMAIN:-}}"
+
+if [[ -n "$DOMAIN" ]]; then
+  run_for_domain "$DOMAIN" || log "Domain failed: $DOMAIN"
+  exit 0
 fi
 
-# Deduplicate results
-if [[ -f "$OUTDIR/$DOMAIN.dns_brute" ]]; then
-  sort -u "$OUTDIR/$DOMAIN.dns_brute" -o "$OUTDIR/$DOMAIN.dns_brute"
-else
-  touch "$OUTDIR/$DOMAIN.dns_brute"
+if [[ -f "$TARGETS_FILE" ]]; then
+  # Read non-empty, non-comment lines and deduplicate
+  mapfile -t DOMAINS < <(grep -v '^[[:space:]]*#' "$TARGETS_FILE" | sed 's/[[:space:]]//g' | sed '/^$/d' | sort -u)
+  if [[ ${#DOMAINS[@]} -eq 0 ]]; then
+    echo "No valid targets in $TARGETS_FILE" >&2
+    exit 1
+  fi
+  for d in "${DOMAINS[@]}"; do
+    run_for_domain "$d" || log "Domain failed: $d"
+  done
+  exit 0
 fi
 
-end_ts=$(date +%s)
-elapsed=$((end_ts - start_ts))
-
-# Summary
-{
-  echo "Domain: $DOMAIN"
-  echo "Threads: $THREADS"
-  echo "Batch size: $BATCH_LINES"
-  echo "Sleep between batches (sec): $SLEEP_SEC"
-  echo "Dynamic enabled: $ENABLE_DYNAMIC"
-  echo "Static batches: $static_batches"
-  echo "Dynamic batches: $dyn_batches"
-  echo "Resolvers: $RESOLVERS"
-  echo "Records resolved: $(wc -l < "$OUTDIR/$DOMAIN.dns_brute" 2>/dev/null || echo 0)"
-  echo "Elapsed seconds: $elapsed"
-} > "$OUTDIR/summary.txt"
-
-log "Done. Resolved count: $(wc -l < "$OUTDIR/$DOMAIN.dns_brute" 2>/dev/null || echo 0)"
-log "Output saved to $OUTDIR"
+echo "Usage: ./run.sh <domain> | set DOMAIN or provide TARGETS_FILE (default /app/targets.txt)"
+exit 1
 

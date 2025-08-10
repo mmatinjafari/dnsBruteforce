@@ -21,6 +21,7 @@ Low-resource, Dockerized static + dynamic subdomain brute-forcing and resolution
 
 ### Environment Variables
 - `DOMAIN` (alt: CLI arg): target domain
+- `TARGETS_FILE` (default `/app/targets.txt`): file containing multiple domains (one per line, `#` comments allowed)
 - `THREADS` (default `3`)
 - `BATCH_LINES` (default `20000`)
 - `SLEEP_SEC` (default `5`)
@@ -29,6 +30,21 @@ Low-resource, Dockerized static + dynamic subdomain brute-forcing and resolution
 - `DNSGEN_WORDLIST` (optional)
 - `MAX_RECORDS` (default `0` = no limit per phase)
 - `RUN_TIMEOUT_SEC` (default `0` = unlimited)
+
+جدول متغیرها (FA):
+
+| Env Variable      | پیش‌فرض                | توضیح |
+|-------------------|------------------------|-------|
+| DOMAIN            | –                      | دامنه هدف (یا در حالت جدید از `targets.txt`) |
+| TARGETS_FILE      | `/app/targets.txt`     | مسیر فایل حاوی چند دامنه (هر خط یک دامنه، پشتیبانی از `#` برای کامنت) |
+| THREADS           | 3                      | تعداد تردها |
+| BATCH_LINES       | 20000                  | تعداد رکورد در هر batch |
+| SLEEP_SEC         | 5                      | مکث بین batchها |
+| ENABLE_DYNAMIC    | 0                      | فعال/غیرفعال کردن dnsgen |
+| RESOLVERS         | `/root/resolvers.txt`  | مسیر فایل resolvers |
+| DNSGEN_WORDLIST   | –                      | مسیر وردلیست اضافی برای dnsgen |
+| MAX_RECORDS       | 0                      | محدود کردن تعداد رکورد برای تست |
+| RUN_TIMEOUT_SEC   | 0                      | تایم‌اوت کل اجرا (ثانیه) |
 
 ### Output Structure
 ```
@@ -68,9 +84,24 @@ docker run --rm \
 ```
 
 Optional timeout:
+Use .env file:
+
+```bash
+cp .env.example .env
+# ویرایش تنظیمات مورد نظر
+docker run --rm --env-file .env -v $(pwd)/out:/app/out dnsbrute-min
+```
+
 
 ```bash
 docker run --rm -e DOMAIN=example.com -e RUN_TIMEOUT_SEC=3600 -v $(pwd)/out:/app/out dnsbrute-min
+```
+
+Run multiple domains via file:
+
+```bash
+printf "example.com\nexample.org\n# comment\n test.com\n" > targets.txt
+docker run --rm -e TARGETS_FILE=/app/targets.txt -v $(pwd)/targets.txt:/app/targets.txt -v $(pwd)/out:/app/out dnsbrute-min
 ```
 
 ### Railway Deployment
@@ -81,11 +112,11 @@ This repo works out-of-the-box on Railway.
 3. Configure variables in the Railway service settings:
    - `DOMAIN` (required)
    - Optional: `THREADS`, `BATCH_LINES`, `SLEEP_SEC`, `ENABLE_DYNAMIC`, `RUN_TIMEOUT_SEC`
-4. Deploy; outputs will be stored in the container under `/app/out/<domain>`. Add a Volume (optional) and mount it at `/app/out` to persist results.
+4. Deploy; outputs will be stored in the container under `/app/out/<domain>`. Add a Volume (optional) and mount it at `/app/out` to persist results. To run multiple domains, create a Railway Volume or Config File mounted to `/app/targets.txt` and set `TARGETS_FILE=/app/targets.txt`.
 
 ### Notes
 - `resolvers.txt` is updated during image build. You can override with `RESOLVERS`.
 - `dnsgen` works without a helper list; pass `DNSGEN_WORDLIST` if you want to use a custom list.
 
 ### Legal & Responsible Use
-This tool is for security testing with explicit authorization. Only scan systems you own or have written permission to test. You are solely responsible for complying with laws, terms of service, and provider AUPs.# dnsBruteforce
+This tool is for security testing with explicit authorization. Only scan systems you own or have written permission to test. You are solely responsible for complying with laws, terms of service, and provider AUPs.
