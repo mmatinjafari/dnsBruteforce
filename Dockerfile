@@ -41,6 +41,7 @@ RUN mkdir -p /app/wordlists && \
 
 WORKDIR /app
 COPY run.sh /app/run.sh
+COPY targets.txt /app/targets.txt
 RUN chmod +x /app/run.sh
 
 ENTRYPOINT ["/app/run.sh"]

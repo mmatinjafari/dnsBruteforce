@@ -127,8 +127,8 @@ if [[ -n "$DOMAIN" ]]; then
 fi
 
 if [[ -f "$TARGETS_FILE" ]]; then
-  # Read non-empty, non-comment lines and deduplicate
-  mapfile -t DOMAINS < <(grep -v '^[[:space:]]*#' "$TARGETS_FILE" | sed 's/[[:space:]]//g' | sed '/^$/d' | sort -u)
+  # Read non-empty, non-comment lines, trim whitespace, and deduplicate
+  mapfile -t DOMAINS < <(sed -e 's/^\s\+//;s/\s\+$//' "$TARGETS_FILE" | grep -v '^[[:space:]]*#' | sed '/^$/d' | sort -u)
   if [[ ${#DOMAINS[@]} -eq 0 ]]; then
     echo "No valid targets in $TARGETS_FILE" >&2
     exit 1
