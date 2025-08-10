@@ -13,6 +13,7 @@ DNSGEN_WORDLIST="${DNSGEN_WORDLIST:-}"
 MAX_RECORDS="${MAX_RECORDS:-0}"
 RUN_TIMEOUT_SEC="${RUN_TIMEOUT_SEC:-0}"
 TARGETS_FILE="${TARGETS_FILE:-/app/targets.txt}"
+OUT_BASE="${OUT_BASE:-${RAILWAY_VOLUME_MOUNT_PATH:-/app/out}}"
 
 log() { printf '[%s] %s\n' "$(date +'%Y-%m-%d %H:%M:%S')" "$*"; }
 
@@ -27,7 +28,7 @@ maybe_timeout() {
 
 run_for_domain() {
   local domain="$1"
-  local outdir="/app/out/$domain"
+  local outdir="${OUT_BASE}/$domain"
   mkdir -p "$outdir"
 
   log "Starting scan for $domain"
@@ -56,7 +57,7 @@ run_for_domain() {
     log ">> Static batch: $(basename "$part")"
     maybe_timeout nice -n 10 ionice -c3 \
       shuffledns -list "$part" -d "$domain" \
-        -r "$RESOLVERS" -m "$(command -v massdns)" -t "$THREADS" -silent \
+        -r "$RESOLVERS" -massdns "$(command -v massdns)" -mode resolve -t "$THREADS" -silent \
       | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
     sleep "$SLEEP_SEC"
   done
@@ -81,7 +82,7 @@ run_for_domain() {
       log ">> Dynamic batch: $(basename "$part")"
       maybe_timeout nice -n 10 ionice -c3 \
         shuffledns -list "$part" -d "$domain" \
-          -r "$RESOLVERS" -m "$(command -v massdns)" -t "$THREADS" -silent \
+          -r "$RESOLVERS" -massdns "$(command -v massdns)" -mode resolve -t "$THREADS" -silent \
         | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
       sleep "$SLEEP_SEC"
     done
@@ -117,6 +118,11 @@ run_for_domain() {
   # Cleanup temporary split files for this domain
   rm -f "$outdir"/${domain}_part_* "$outdir"/${domain}_gen_part_* || true
 }
+
+# Auto-discover targets file inside attached Railway volume if not provided
+if [[ ! -f "$TARGETS_FILE" && -n "${RAILWAY_VOLUME_MOUNT_PATH:-}" && -f "${RAILWAY_VOLUME_MOUNT_PATH}/targets.txt" ]]; then
+  TARGETS_FILE="${RAILWAY_VOLUME_MOUNT_PATH}/targets.txt"
+fi
 
 # Determine targets: file or single DOMAIN/arg
 DOMAIN="${1:-${DOMAIN:-}}"
