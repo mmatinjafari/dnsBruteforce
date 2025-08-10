@@ -23,9 +23,11 @@ RUN git clone --depth=1 https://github.com/blechschmidt/massdns /opt/massdns \
 # Install shuffledns
 RUN go install github.com/projectdiscovery/shuffledns/cmd/shuffledns@latest
 
-# Install dnsgen
-RUN pip3 install --no-cache-dir --upgrade pip \
-    && pip3 install --no-cache-dir dnsgen
+# Install dnsgen in a virtual environment (avoid PEP 668 externally managed env)
+RUN python3 -m venv /opt/dnsgen \
+    && /opt/dnsgen/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/dnsgen/bin/pip install --no-cache-dir dnsgen \
+    && ln -sf /opt/dnsgen/bin/dnsgen /usr/local/bin/dnsgen
 
 # Download resolvers
 RUN curl --retry 3 -fsSL https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt -o /root/resolvers.txt \
