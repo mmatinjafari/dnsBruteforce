@@ -85,13 +85,20 @@ run_for_domain() {
   static_batches=0
   for part in "$outdir"/${domain}_part_*; do
     [[ -e "$part" ]] || break
+
+    # اگر این پارت قبلاً کاملاً پردازش شده است، حذفش کن و برو بعدی (برای ادامهٔ بدون تکرار پس از ری‌استارت)
+    if [[ -s "$outdir/$domain.dns_brute" ]] && grep -qF "$(head -n1 "$part")" "$outdir/$domain.dns_brute"; then
+      rm -f "$part"
+      continue
+    fi
+
     static_batches=$((static_batches+1))
     log ">> Static batch: $(basename "$part")"
     maybe_timeout \
       shuffledns -list "$part" -d "$domain" \
         -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -c "$CONCURRENCY" -silent \
       2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
-    
+
     exit_code=${PIPESTATUS[0]}
     if [[ $exit_code -eq 137 ]]; then
         log "[FATAL] Exit code 137 indicates an Out-Of-Memory (OOM) error. The container was killed."
@@ -100,6 +107,7 @@ run_for_domain() {
         log "[WARNING] shuffledns exited with code $exit_code for batch $(basename "$part")."
     fi
 
+    rm -f "$part"  # delete processed part to free space and mark progress
     sleep "$SLEEP_SEC"
   done
 
@@ -119,6 +127,12 @@ run_for_domain() {
     split -l "$BATCH_LINES" "$outdir/$domain.dns_gen" "$outdir/${domain}_gen_part_" || true
     for part in "$outdir"/${domain}_gen_part_*; do
       [[ -e "$part" ]] || break
+
+      if [[ -s "$outdir/$domain.dns_brute" ]] && grep -qF "$(head -n1 "$part")" "$outdir/$domain.dns_brute"; then
+        rm -f "$part"
+        continue
+      fi
+
       dyn_batches=$((dyn_batches+1))
       log ">> Dynamic batch: $(basename "$part")"
       maybe_timeout \
@@ -134,6 +148,7 @@ run_for_domain() {
           log "[WARNING] shuffledns (dynamic) exited with code $exit_code for batch $(basename "$part")."
       fi
 
+      rm -f "$part"
       sleep "$SLEEP_SEC"
     done
   fi
