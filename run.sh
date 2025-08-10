@@ -87,7 +87,7 @@ run_for_domain() {
     maybe_timeout \
       shuffledns -list "$part" -d "$domain" \
         -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
-      2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null
+      2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
     
     exit_code=${PIPESTATUS[0]}
     if [[ $exit_code -eq 137 ]]; then
@@ -121,7 +121,7 @@ run_for_domain() {
       maybe_timeout \
         shuffledns -list "$part" -d "$domain" \
           -r "$RESOLVERS" -massdns "$MASSDNS_BIN" -mode resolve -t "$THREADS" -silent \
-        2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null
+        2>>"$outdir/run.log" | tee -a "$outdir/$domain.dns_brute" >/dev/null || true
 
       exit_code=${PIPESTATUS[0]}
       if [[ $exit_code -eq 137 ]]; then
